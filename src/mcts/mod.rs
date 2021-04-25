@@ -1,28 +1,29 @@
+use std::num::NonZeroU64;
+
 use ordered_float::OrderedFloat;
 use rand::Rng;
 
 use crate::board::{Board, Coord, Player};
 use crate::bot_game::Bot;
 use crate::mcts::heuristic::{Heuristic, ZeroHeuristic};
-use std::num::NonZeroU32;
 
 pub mod heuristic;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct IdxRange {
-    pub start: NonZeroU32,
+    pub start: NonZeroU64,
     pub length: u8,
 }
 
 impl IdxRange {
-    pub fn iter(&self) -> std::ops::Range<u32> {
-        self.start.get()..(self.start.get() + self.length as u32)
+    pub fn iter(&self) -> std::ops::Range<u64> {
+        self.start.get()..(self.start.get() + self.length as u64)
     }
 }
 
 impl IntoIterator for IdxRange {
-    type Item = u32;
-    type IntoIter = std::ops::Range<u32>;
+    type Item = u64;
+    type IntoIter = std::ops::Range<u64>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
@@ -31,15 +32,15 @@ impl IntoIterator for IdxRange {
 
 pub struct Node {
     pub coord: Coord,
-    pub parent: Option<u32>,
+    pub parent: Option<u64>,
     pub children: Option<IdxRange>,
-    pub wins: u32,
-    pub draws: u32,
-    pub visits: u32,
+    pub wins: u64,
+    pub draws: u64,
+    pub visits: u64,
 }
 
 impl Node {
-    fn new(coord: Coord, parent: Option<u32>) -> Self {
+    fn new(coord: Coord, parent: Option<u64>) -> Self {
         Node {
             coord,
             parent,
@@ -50,7 +51,7 @@ impl Node {
         }
     }
 
-    pub fn uct(&self, parent_visits: u32, heuristic: f32) -> f32 {
+    pub fn uct(&self, parent_visits: u64, heuristic: f32) -> f32 {
         let wins = self.wins as f32;
         let draws = self.draws as f32;
         let visits = self.visits as f32;
@@ -73,7 +74,7 @@ pub struct Evaluation {
     pub value: f32,
 }
 
-pub fn mcts_build_tree<H: Heuristic, R: Rng>(board: &Board, iterations: u32, heuristic: &H, rand: &mut R) -> Vec<Node> {
+pub fn mcts_build_tree<H: Heuristic, R: Rng>(board: &Board, iterations: u64, heuristic: &H, rand: &mut R) -> Vec<Node> {
     let mut tree: Vec<Node> = Vec::new();
 
     //the actual coord doesn't matter, just pick something
@@ -84,7 +85,7 @@ pub fn mcts_build_tree<H: Heuristic, R: Rng>(board: &Board, iterations: u32, heu
             println!("Progress: {:.4}", iteration as f32 / iterations as f32)
         }
 
-        let mut curr_node: u32 = 0;
+        let mut curr_node: u64 = 0;
         let mut curr_board = board.clone();
 
         while !curr_board.is_done() {
@@ -92,15 +93,15 @@ pub fn mcts_build_tree<H: Heuristic, R: Rng>(board: &Board, iterations: u32, heu
             let children = match tree[curr_node as usize].children {
                 Some(children) => children,
                 None => {
-                    let start = tree.len() as u32;
+                    let start = tree.len() as u64;
                     tree.extend(curr_board.available_moves().map(|c| Node::new(c, Some(curr_node))));
-                    let end = tree.len() as u32;
+                    let end = tree.len() as u64;
 
-                    debug_assert!(start != 0 && end != 0 );
+                    debug_assert!(start != 0 && end != 0);
                     let children = unsafe {
                         //SAFETY: start and end are not zero because the root node occupies index 0
                         IdxRange {
-                            start:NonZeroU32::new_unchecked(start),
+                            start: NonZeroU64::new_unchecked(start),
                             length: (end - start) as u8,
                         }
                     };
@@ -175,10 +176,14 @@ pub fn mcts_build_tree<H: Heuristic, R: Rng>(board: &Board, iterations: u32, heu
         }
     }
 
+    //TODO check how many duplicate positions there are here to see whether a transposition table would be worth it
+    //  also consider rotating and mirroring, is there a neat hash function that automatically handles this?
+    //    this is probably only useful at the start of the game, the symmetries disappear very quickly
+
     tree
 }
 
-pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: u32, heuristic: &H, rand: &mut R) -> Evaluation {
+pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: u64, heuristic: &H, rand: &mut R) -> Evaluation {
     let tree = mcts_build_tree(board, iterations, heuristic, rand);
 
     let best_move = match tree[0].children {
@@ -197,24 +202,25 @@ pub fn mcts_evaluate<H: Heuristic, R: Rng>(board: &Board, iterations: u32, heuri
 }
 
 pub struct MCTSBot<H: Heuristic, R: Rng> {
-    iterations: u32,
+    iterations: u64,
     heuristic: H,
+    //TODO remove batch_eval
     batch_eval: bool,
     rand: R,
 }
 
 impl<R: Rng> MCTSBot<ZeroHeuristic, R> {
-    pub fn new(iterations: u32, rand: R) -> MCTSBot<ZeroHeuristic, R> {
+    pub fn new(iterations: u64, rand: R) -> MCTSBot<ZeroHeuristic, R> {
         MCTSBot { iterations, heuristic: ZeroHeuristic, batch_eval: false, rand }
     }
 
-    pub fn new_with_batch_eval(iterations: u32, rand: R) -> MCTSBot<ZeroHeuristic, R> {
+    pub fn new_with_batch_eval(iterations: u64, rand: R) -> MCTSBot<ZeroHeuristic, R> {
         MCTSBot { iterations, heuristic: ZeroHeuristic, batch_eval: true, rand }
     }
 }
 
 impl<H: Heuristic, R: Rng> MCTSBot<H, R> {
-    pub fn new_with_heuristic(iterations: u32, rand: R, heuristic: H) -> MCTSBot<H, R> {
+    pub fn new_with_heuristic(iterations: u64, rand: R, heuristic: H) -> MCTSBot<H, R> {
         MCTSBot { iterations, heuristic, batch_eval: false, rand }
     }
 }
