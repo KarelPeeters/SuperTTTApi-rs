@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
-use itertools::Itertools;
+use itertools::{Itertools, zip_eq};
 use ordered_float::OrderedFloat;
 use rand::{Rng, SeedableRng, thread_rng};
 use rand::rngs::SmallRng;
@@ -10,22 +10,22 @@ use rayon::iter::{ParallelBridge, ParallelIterator};
 use sttt::board::{Board, board_from_compact_string, board_to_compact_string, Coord, Player};
 use sttt::bot_game;
 use sttt::bot_game::Bot;
-use sttt::bots::RandomBot;
 use sttt::mcts::{mcts_build_tree, mcts_evaluate, MCTSBot, Node};
 use sttt::mcts::heuristic::{MacroHeuristic, ZeroHeuristic};
 use sttt::minimax::MiniMaxBot;
 
 fn main() {
-    _plot_evaluations()
+    _test_mcts_tree()
 }
 
+
 fn _test_mcts_tree() {
-    let tree = mcts_build_tree(&Board::new(), 1_000_000, &ZeroHeuristic, &mut thread_rng());
+    let tree = mcts_build_tree(&Board::new(), 1_000_000_000, &ZeroHeuristic, &mut thread_rng());
     _print_mcts_tree(&tree, 0, 0, 5);
 }
 
-fn _print_mcts_tree(tree: &Vec<Node>, node: usize, depth: usize, max_depth: usize) {
-    let node = &tree[node];
+fn _print_mcts_tree(tree: &Vec<Node>, node: u32, depth: u32, max_depth: u32) {
+    let node = &tree[node as usize];
 
     for _ in 0..=depth {
         print!("  ")
@@ -38,9 +38,9 @@ fn _print_mcts_tree(tree: &Vec<Node>, node: usize, depth: usize, max_depth: usiz
     }
 
     if let Some(children) = node.children {
-        let best_child = children.start + children.iter()
-            .map(|c| OrderedFloat(tree[c].signed_value()))
-            .position_max().unwrap();
+        let best_child = children.start.get() + children.iter()
+            .map(|c| OrderedFloat(tree[c as usize].signed_value()))
+            .position_max().unwrap() as u32;
 
         for child in children {
             let next_max_depth = if child == best_child {
@@ -74,6 +74,34 @@ fn _basic_self_play() {
 
     println!("{}", board);
     println!("{:?}", board.won_by);
+}
+
+fn _plot_mismatch_evaluations() {
+    let mut board = Board::new();
+
+    let iterations = [100_000, 1_000_000, 10_000_000, 100_000_000];
+
+    let mut values = vec![vec![]; iterations.len()];
+
+    let mut sign = 1.0;
+
+    while !board.is_done() {
+        println!("{}", board);
+
+        let evals = iterations.iter()
+            .map(|&iter| mcts_evaluate(&board, iter, &ZeroHeuristic, &mut thread_rng()))
+            .collect_vec();
+
+        for (values, eval) in zip_eq(&mut values, &evals) {
+            values.push(sign * eval.value);
+        }
+
+        board.play(evals[0].best_move.unwrap());
+        sign *= -1.0;
+    }
+
+    println!("iterations = {:?}", iterations);
+    println!("values = {:?}", values);
 }
 
 fn _plot_evaluations() {
@@ -204,8 +232,8 @@ fn _heuristic_bot_game() {
 
 fn _bot_game() {
     let res = bot_game::run(
-        || RandomBot,
-        || MCTSBot::new(1000, SmallRng::from_entropy()),
+        || MCTSBot::new(10_000, SmallRng::from_entropy()),
+        || MCTSBot::new(100_000, SmallRng::from_entropy()),
         100,
         true,
     );

@@ -89,6 +89,7 @@ impl Debug for Coord {
 //TODO implement simpler partialeq again
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Board {
+    //TODO try u16 here, that makes Board a lot smaller and maybe even feasible to store in the tree?
     grids: [u32; 9],
     main_grid: u32,
 
