@@ -79,7 +79,11 @@ pub fn mcts_build_tree<H: Heuristic, R: Rng>(board: &Board, iterations: u32, heu
     //the actual coord doesn't matter, just pick something
     tree.push(Node::new(Coord::from_o(0), None));
 
-    for _ in 0..iterations {
+    for iteration in 0..iterations {
+        if iteration % (iterations / 1000) == 0 {
+            println!("Progress: {:.4}", iteration as f32 / iterations as f32)
+        }
+
         let mut curr_node: u32 = 0;
         let mut curr_board = board.clone();
 
@@ -127,7 +131,9 @@ pub fn mcts_build_tree<H: Heuristic, R: Rng>(board: &Board, iterations: u32, heu
                 let heuristic = heuristic.evaluate(&curr_board);
                 let uct = tree[child as usize].uct(parent_visits, heuristic);
                 OrderedFloat(uct)
-            }).expect("Board is not done, this node should have a child");
+            }).unwrap_or_else(|| {
+                panic!("Board is not done, this node should have a child\nboard: {}, children: {:?}, iteration {}", board, children, iteration);
+            });
 
             curr_node = selected;
             curr_board.play(tree[curr_node as usize].coord);
